@@ -1,74 +1,41 @@
+####################################################################################
+######################## SIRA SCRIPT ###############################################
+####################################################################################
 import discord
 from discord.ext import commands
+
 import datetime
-import pytz
 import os
-from dotenv import load_dotenv
 import logging
 import uuid
-import json
-
-# Initial Imports
-from gcsa.google_calendar import GoogleCalendar
-from gcsa.event import Event
-from gcsa.recurrence import Recurrence, DAILY, SU, SA
-
-from oauth2client.service_account import ServiceAccountCredentials
-from gspread.utils import GridRangeType
-from gcsa.calendar import Calendar
-
-import numpy as np
-import pandas as pd
-import datetime as datetime
-import gspread
-from beautiful_date import Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sept, Oct, Nov, Dec
-from BotScript import update_or_create_discord_event, eastern
 import asyncio
-import datetime
-import os
 from dotenv import load_dotenv
-import json
+import pytz
+import pandas as pd
+import numpy as np
+
+# Google and Sheets-related imports
+import gspread
+from gcsa.google_calendar import GoogleCalendar
 
 from OrgParse import conversion_excel_date, parse_times, get_color, post_events, get_event_by_search_query, update_events_by_id, Reorganize_Sheet, Verbose_Sheet, update_events_submitted, get_event_submitted
-Missing_color = 1
-from FSI_Programming import Import_Prog, Reorganize_Sheet_Import
+from FSI_Programming import Import_Sheet, Reorganize_Sheet_Import
 
-# TODO:
-# 0. Editing events on external SOG whenver Deploy_SOG or Edit_SOG are called.
-# 1. Import_Prog not importing Sunday events (ONLY IF THE ONGOING CHALLENGES MISSING)
-# 2. Weekly Events
-# 3. Import_Prog using diff Organize for now (in FSI_Programming) because the other does not delete rows, but DOES the rest of the import stuff right.
-# 4. Organize (in OrgParse) not deleting extra rows.
-# 5. Merging it all.
-
-# =======================
-# External function stubs
-# =======================
-import os
-import gspread
-import pandas as pd
-import datetime
-from gcsa.google_calendar import GoogleCalendar
-from typing import Any, MutableMapping
-
-# Assume conversion_excel_date, parse_times, get_color, and post_events are defined elsewhere
+################################################################################################
+######################## Helper Functions ######################################################
+################################################################################################
 
 async def Deploy_SOG(bot, program: str, week_number: int) -> str:
     print(f'Deploying events for Week #{week_number}...')
     
-    if program == "Residential":
+    if program == "DEFAULT":
         gc = gspread.service_account(filename='service_account.json')
-        wks = gc.open(os.getenv("RES_SOG_TOKEN"))
-        calendar = GoogleCalendar(os.getenv("RES_CALENDAR_ID"), credentials_path=r'credentials.json')
-    elif program == "Online":
-        gc = gspread.service_account(filename='service_account.json')
-        wks = gc.open(os.getenv("ONLINE_SOG_TOKEN"))
-        calendar = GoogleCalendar(os.getenv("ONLINE_CALENDAR_ID"), credentials_path=r'credentials.json')
-    elif program == "SIFP":
-        gc = gspread.service_account(filename='service_account.json')
-        wks = gc.open(os.getenv("SIFP_SOG_TOKEN"))
-        calendar = GoogleCalendar(os.getenv("SIFP_CALENDAR_ID"), credentials_path=r'credentials.json')
+        wks = gc.open(os.getenv("DEFAULT_SOG_TOKEN"))
+        calendar = GoogleCalendar(os.getenv("DEFAULT_CALENDAR_ID"), credentials_path=r'credentials.json')
 
+    # You can append additional programs here if you want to run multiple simultaneously
+
+    ## Get Header and SOG Data (must be same SOG Format).
     cal_data = pd.DataFrame(wks.get_worksheet(week_number + 2).get_all_values(value_render_option='UNFORMATTED_VALUE'))[2:][:]
     headers = cal_data.iloc[0].values
     cal_data.columns = headers
@@ -100,24 +67,22 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
     Event_IDs = cal_data['Event ID'].tolist()
     Colors = get_color(Categories)
     
-    print(f"Event IDs = {Event_IDs}")
     Descriptions_mask = [val == '' for val in Descriptions]
     Locations_mask = [val == '' for val in Locations]
     Leaders_mask = [val == '' for val in Leaders]
 
-    if program == "Online":
-        IDCol = 10
-    else: 
-        IDCol = 9
+    IDCol = np.where(headers == 'Event ID')[0][0]
     
     await post_events(bot, wks.get_worksheet(week_number + 2), week_number, IDCol, program, calendar, p=(Titles, Leaders, Leaders_mask, Dates, 
-                                                                                                                 Start_Times, End_Times, Locations, Locations_mask, Descriptions, Descriptions_mask, Categories, Event_IDs, Colors))
-    ## Deploy external SOG
+                                                                                                            Start_Times, End_Times, Locations, Locations_mask, Descriptions, Descriptions_mask, Categories, Event_IDs, Colors))
+    #########################
+    ## Deploy external SOG ##
+    #########################
     source_wks = wks.get_worksheet(week_number + 2)
-    new_sheet_info = source_wks.copy_to(os.getenv("SIFP_SOG_EXTERNAL_TOKEN"))
+    new_sheet_info = source_wks.copy_to(os.getenv("DEFAULT_SOG_EXTERNAL_TOKEN"))
     
     # Open the destination spreadsheet
-    destination_spreadsheet = gc.open_by_key(os.getenv("SIFP_SOG_EXTERNAL_TOKEN"))
+    destination_spreadsheet = gc.open_by_key(os.getenv("DEFAULT_SOG_EXTERNAL_TOKEN"))
     
     # Get the newly created worksheet
     new_wks = destination_spreadsheet.get_worksheet_by_id(new_sheet_info['sheetId'])
@@ -133,7 +98,7 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
     # Update the title of the new worksheet to match the original
     new_wks.update_title(source_wks.title)
 
-    # Delete column K
+    # Delete column IDCol for deployed sheet
     request = {
         "requests": [
             {
@@ -141,8 +106,8 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
                     "range": {
                         'sheetId': new_sheet_info['sheetId'],
                         "dimension": "COLUMNS",
-                        "startIndex": 10,
-                        "endIndex": 11
+                        "startIndex": IDCol,
+                        "endIndex": IDCol+1
                     }
                 }
             }
@@ -165,37 +130,23 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
 
     return f"SOG deployed for {program} (Week {week_number})."
 
-def Import_Programming(program: str, week_number: int, import_type: int) -> str:
+def Import_Programming(program: str, week_number: int) -> str:
     gc = gspread.service_account(filename='service_account.json')
-    if(program == "Residential"):
-        wks_PROG = gc.open(os.getenv("RES_PROG_TOKEN"))
-        wks_SOG = gc.open(os.getenv("RES_SOG_TOKEN"))
-    elif(program == "Online"):
-        wks_PROG = gc.open(os.getenv("ONLINE_PROG_TOKEN"))
-        wks_SOG = gc.open(os.getenv("ONLINE_SOG_TOKEN"))
-    elif(program == "SIFP"):
-        wks_PROG = gc.open(os.getenv("SIFP_PROG_TOKEN"))
-        wks_SOG = gc.open(os.getenv("SIFP_SOG_TOKEN"))
+    if(program == "DEFAULT"):
+        wks_PROG = gc.open(os.getenv("DEFAULT_PROG_TOKEN"))
+        wks_SOG = gc.open(os.getenv("DEFAULT_SOG_TOKEN"))
 
-    Import_Prog(program, wks_PROG, wks_SOG, week_number, import_type)
+    num_sheets = len(wks_PROG.worksheets())
+    for n in (num_sheets-1):
+        Import_Sheet(program, wks_PROG, wks_SOG, week_number, n)
+
     Reorganize_Sheet_Import(program, wks_SOG, week_number)
-    if(import_type == 0):
-        label = "Programming"
-    elif(import_type == 1):
-        label = "Cocurricular"
-    elif(import_type == 2):
-        label = "All"
-    return f"Imported {label} for {program} (Week {week_number})."
+    return f"Imported Programming for {program} (Week {week_number})."
 
 def Submit_Event(program: str, payload: dict) -> str:
     gc = gspread.service_account(filename='service_account.json')
-    wks = gc.open(os.getenv("SUBMITTED_EVENTS_TOKEN"))
-    if(program == "Residential"):
-        wks_prog =  wks.get_worksheet(0)
-    elif(program == "Online"):
-        wks_prog =  wks.get_worksheet(1)
-    elif(program == "SIFP"):
-        wks_prog =  wks.get_worksheet(0)
+    if(program == "DEFAULT"):
+        wks_prog = (gc.open(os.getenv("DEFAULT_SUBMITTED_EVENTS_TOKEN"))).get_worksheet(0)
 
     hosts_string = ", ".join(payload.get('hosts', []))
 
@@ -219,8 +170,9 @@ def Submit_Event(program: str, payload: dict) -> str:
 
 load_dotenv()
 EASTERN_TZ = pytz.timezone('US/Eastern')
-BOT_TOKEN = os.getenv("SIRA_BOT_TOKEN")
+BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
+######## LOAD LIST OF ADMINISTRATIVE USERS. STORED AS USER_NAME:DISCORD_USER_ID ########
 USER_USERID = {}
 map_str = os.getenv("USER_MAP")
 if map_str:
@@ -236,6 +188,7 @@ USERS = set(USER_USERID.keys())
 USER_IDS = set(USER_USERID.values())
 USERID_USER = {user_id: user_name for user_name, user_id in USER_USERID.items()}
 
+######## LOAD LIST OF MENTIONED ROLES AND CHANNEL YOU WOULD LIKE TO REDIRECT THE MENTION TO ########
 ROLE_CHANNEL_MAP = {}
 map_str = os.getenv("ROLE_CHANNEL_MAP")
 if map_str:
@@ -248,6 +201,7 @@ if map_str:
         logging.error("Invalid format for ROLE_CHANNEL_MAP in .env file. Please use 'role_id:channel_id,role_id:channel_id'")
 NOTIFICATION_ROLE_IDS = set(ROLE_CHANNEL_MAP.keys())
 
+######## SET UP LOGGING AND INTENTS FOR DISCORD BOT ########
 log_handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='a')
 logging.basicConfig(level=logging.INFO, handlers=[log_handler])
 logger = logging.getLogger(__name__)
@@ -258,10 +212,10 @@ intents.members = True
 intents.reactions = True
 
 bot = commands.Bot(command_prefix='!', intents=intents)
-bot.owner_id = USER_USERID.get("ALEX", None)
+bot.owner_id = USER_USERID.get("OWNER", None)
 
 ################################################################################################
-######################## Bot Cog ###############################################################
+######################## BOT STRUCTURE #########################################################
 ################################################################################################
 
 class SIRA_BOT(commands.Cog):
@@ -457,17 +411,18 @@ class SIRA_BOT(commands.Cog):
                 return await ask(prompt, validate, parse, timeout)
             return content
 
-        # programs = {"1": "Residential", "2": "Online", "3": "SIFP",
-        #             "residential": "Residential", "online": "Online", "sifp": "SIFP"}
+        ########## YOU CAN IMPLEMENT MULTIPLE PROGRAMS. e.g.,:
+        # programs = {"1": "PROGRAM1", "2": "PROGRAM2", "3": "PROGRAM3",
+        #             "program1": "PROGRAM1", "program2": "PROGRAM2", "program3": "PROGRAM3"}
         # program = await ask(
-        #     "**Which Program?**\n(1) Residential\n(2) Online\n(3) SIFP\n\nType a number or name (or `cancel`).",
+        #     "**Which Program?**\n(1) PROGRAM1\n(2) PROGRAM2\n(3) PROGRAM3\n\nType a number or name (or `cancel`).",
         #     validate=lambda x: str(x).lower() in programs,
         #     parse=lambda s: programs[s.lower()]
         # )
         # if program is None:
         #     return
         
-        program = "SIFP"
+        program = "DEFAULT"
         if author.id in USER_IDS:
             tasks = {
                 "1": "Deploy SOG", "2": "Import Programming", "3": "Submit Event",
@@ -545,21 +500,8 @@ class SIRA_BOT(commands.Cog):
                 f"**Import Programming** for _{program}_ — enter **Week Number** (positive integer):",
                 parse=parse_week_number
             )
-            if(program != "SIFP"):
-                if week is None: return
-                typ = await ask(
-                    "**Import Programming, Cocurricular, or All?** (P/C/A or full word):",
-                    parse=parse_prog_type
-                )
-                if typ is None: return
-                label = "Cocurricular" if typ == 1 else "Programming"
-                await channel.send(f"📥 Importing **{label}** for **{program}**, Week **{week}**...")
-                result = Import_Programming(program, week, typ)
-            else:
-                typ = 0
-                label = "Programming"
-                await channel.send(f"📥 Importing **{label}** for **{program}**, Week **{week}**...")
-                result = Import_Programming(program, week, typ)
+            await channel.send(f"📥 Importing Programming for **{program}**, Week **{week}**...")
+            result = Import_Programming(program, week)
             await channel.send(f"✅ {result}")
             return
 

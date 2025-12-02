@@ -14,15 +14,6 @@ import json
 # Your global variables (if any) and initial setup remain the same
 row_print_offset = 4 
 
-def Import_Prog(program, wks, wks_SOG, week_number, PROGRAMMING):  
-    if(PROGRAMMING == 0):
-        Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING)
-    elif(PROGRAMMING == 1):
-        Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING)
-    else:
-        Import_Sheet(program, wks, wks_SOG, week_number, 0)
-        Import_Sheet(program, wks, wks_SOG, week_number, 1)
-        
 def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):        
     cal_data = pd.DataFrame(wks.get_worksheet(PROGRAMMING).get_all_values(value_render_option='UNFORMATTED_VALUE'))[0:][:]
     headers = cal_data.iloc[0].values
