@@ -104,8 +104,8 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
                     "range": {
                         'sheetId': new_sheet_info['sheetId'],
                         "dimension": "COLUMNS",
-                        "startIndex": IDCol,
-                        "endIndex": IDColp1
+                        "startIndex": int(IDCol),
+                        "endIndex": int(IDColp1)
                     }
                 }
             }
@@ -820,8 +820,8 @@ class SIRA_BOT(commands.Cog):
                                 "range": {
                                     'sheetId': new_sheet_info['sheetId'],
                                     "dimension": "COLUMNS",
-                                    "startIndex": IDCol,
-                                    "endIndex": IDColp1
+                                    "startIndex": int(IDCol),
+                                    "endIndex": int(IDColp1)
                                 }
                             }
                         }
