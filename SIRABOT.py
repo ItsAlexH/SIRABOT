@@ -95,6 +95,7 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
     # Update the title of the new worksheet to match the original
     new_wks.update_title(source_wks.title)
 
+    IDColp1 = IDCol+1
     # Delete column IDCol for deployed sheet
     request = {
         "requests": [
