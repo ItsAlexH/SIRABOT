@@ -17,7 +17,7 @@ TIME_TZ = pytz.timezone(os.getenv("TIMEZONE"))
 # --- Core Function to Update/Create Discord Event ---
 async def update_or_create_discord_event(bot, program:str, event_name: str, event_description: str, event_start_time: datetime.datetime,
     event_end_time: datetime.datetime,  event_location: str, discord_id = None, status = None):
-    GUILD_ID = int(program.upper() + os.getenv("_DISCORD_GUILD_ID"))
+    GUILD_ID = int(os.getenv(program.upper() + "_DISCORD_GUILD_ID"))
     guild = bot.get_guild(GUILD_ID)
         
     if not guild:
