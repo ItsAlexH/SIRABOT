@@ -132,6 +132,102 @@ async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
     except FileNotFoundError:
         print("Event data file not found. Starting with an empty list.")
     
+    ## 1. GO THROUGH EVENTS.JSON AND DELETE ALL EVENTS THAT ARE 1 WEEK OLD AS OF NOW.
+    one_week_ago = TIME_TZ.localize(datetime.datetime.now() - datetime.timedelta(weeks=1))
+    
+    # Track known/active calendar IDs and Discord IDs for synchronization
+    active_calendar_ids = set()
+    active_discord_ids = set()
+    
+    # 1. GO THROUGH EVENTS.JSON AND DELETE ALL EVENTS THAT ARE 1 WEEK OLD.
+    new_events_list = []
+    
+    for event in events:
+        try:
+            event_end_time = datetime.datetime.fromisoformat(event["end_time"])
+            
+            # Check for old events (end time passed more than a week ago)
+            if event_end_time <= one_week_ago:
+                print(f"Cleanup: Removing event from events.json (too old): {event['title']} (ID: {event['id']})")
+                
+                # Check if it was posted to GCal/Discord before removal
+                if event.get('calendar_id') and event.get('calendar_id') != 0:
+                    try:
+                        calendar.delete_event(event['calendar_id'])
+                        print(f"  -> Deleted GCal event {event['calendar_id']}.")
+                    except Exception as e:
+                        print(f"  -> Warning: Could not delete old GCal event: {e}")
+                
+                if event.get('discord_id') and event.get('discord_id') != 0:
+                    try:
+                        # Use the core function to delete the Discord event
+                        await update_or_create_discord_event(bot, program, event["title"], "", event_end_time, event_end_time, "", event['discord_id'], "Canceled")
+                    except Exception as e:
+                        print(f"  -> Warning: Could not delete old Discord event: {e}")
+
+            else:
+                # Keep active and recent events
+                new_events_list.append(event)
+                if event.get('calendar_id') and event.get('calendar_id') != 0:
+                    active_calendar_ids.add(event['calendar_id'])
+                if event.get('discord_id') and event.get('discord_id') != 0:
+                    active_discord_ids.add(event['discord_id'])
+                    
+        except ValueError:
+            # Keep if end_time is unparsable or missing, just in case
+            print(f"Warning: Skipping age check for event with unparsable end_time: {event.get('title')}")
+            new_events_list.append(event)
+            if event.get('calendar_id') and event.get('calendar_id') != 0:
+                    active_calendar_ids.add(event['calendar_id'])
+            if event.get('discord_id') and event.get('discord_id') != 0:
+                    active_discord_ids.add(event['discord_id'])
+            
+    events = new_events_list # Overwrite the list with the cleaned version
+    
+    # 2. SEARCH THROUGH ALL ACTIVE EVENTS IN GCAL AND DISCORD AND DELETE UNMATCHED.
+
+    # --- Synchronization with Google Calendar (using GCSA) ---
+    print("Starting Google Calendar synchronization for orphaned events...")
+    try:
+        # Fetch all events from the calendar
+        # Note: If this calendar is very large, consider filtering by time range.
+        gcal_events = list(calendar.get_events()) 
+        
+        for gcal_event in gcal_events:
+            if gcal_event.event_id not in active_calendar_ids:
+                # Check if the event is scheduled to start in the future before deleting
+                # (to avoid deleting events that were just completed but haven't been cleaned up by GCSA)
+                if gcal_event.start.astimezone(TIME_TZ) > TIME_TZ.localize(datetime.datetime.now()):
+                    print(f"Deleting orphaned GCal event: {gcal_event.summary} (ID: {gcal_event.event_id})")
+                    calendar.delete_event(gcal_event.event_id)
+                
+    except Exception as e:
+        print(f"Error during GCal synchronization: {e}")
+
+    # --- Synchronization with Discord (using discord.py) ---
+    print("Starting Discord synchronization for orphaned events...")
+    GUILD_ID = int(os.getenv(program.upper() + "_DISCORD_GUILD_ID"))
+    guild = bot.get_guild(GUILD_ID)
+    
+    if guild:
+        try:
+            discord_events = await guild.fetch_scheduled_events()
+            current_time = TIME_TZ.localize(datetime.datetime.now())
+            
+            for discord_event in discord_events:
+                # Compare the Discord event ID against the list of known, active Discord IDs
+                if discord_event.id not in active_discord_ids:
+                    # Only delete if the event is in the future
+                    if discord_event.start_time.astimezone(TIME_TZ) > current_time:
+                        print(f"Deleting orphaned Discord event: {discord_event.name} (ID: {discord_event.id})")
+                        await discord_event.delete()
+                        
+        except Exception as e:
+            print(f"Error during Discord synchronization: {e}")
+    else:
+        print(f"Error: Guild with ID {GUILD_ID} not found for synchronization.")
+
+    ## 3. SEARCH THROUGH CURRENT LIVE EVENTS THAT ARE EITHER MATCHED OR YET TO BE DEPLOYED AND EITHER DEPLOY OR UPDATE INFO.
     for j in range(0, len(Dates)):
         if isinstance(Dates[j], datetime.datetime) and \
                 isinstance(Start_Times[j], datetime.datetime) and \
@@ -201,6 +297,26 @@ async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
                 else:
                     print(f'Event not posted: {Titles[j]} (Start Time: {Start_Times[j]}) since event time has passed.')
             elif(process == "Update"):
+                # 1. Search through google calendar events. Is there one with a matching id? if so, make gc_event that. If not, create a new event and assign a new id.
+                try:
+                    gc_event = calendar.get_event(event_id=event["calendar_id"])
+                except:
+                    print('No Matching Google Calendar Events. Assigning New Event')
+                    gc_event = Event(
+                        Titles[j], start=Start_Times[j], end=End_Times[j],
+                        location=location_val,
+                        description=f'<b>Description: </b>{description_val} \n \n<b>Led by: </b>{leader_val} \n \n<b>Category: </b>{category_val}',
+                        color_id=Colors[j] if j < len(Colors) else Missing_color,
+                        minutes_before_popup_reminder=30
+                    )
+                    current_time_localized = TIME_TZ.localize(datetime.datetime.now())
+                    if Start_Times[j] > current_time_localized:
+                        created_event = calendar.add_event(gc_event)
+                        calendar_id = created_event.event_id
+                        event["calendar_id"] = calendar_id
+                    else:
+                        print(f'Event not paired: {Titles[j]} (Start Time: {Start_Times[j]}) since event time has passed.')
+
                 if(event["status"] == "Active"):
                     gc_event = calendar.get_event(event_id=event["calendar_id"])
                     gc_event.summary = Titles[j]
