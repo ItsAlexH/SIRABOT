@@ -68,7 +68,7 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
     Locations_mask = [val == '' for val in Locations]
     Leaders_mask = [val == '' for val in Leaders]
 
-    IDCol = np.where(headers == 'Event ID')[0][0]
+    IDCol = np.where(headers == 'Event ID')[0][0] - 1
     
     await post_events(bot, wks.get_worksheet(week_number + 2), week_number, IDCol, program, calendar, p=(Titles, Leaders, Leaders_mask, Dates, 
                                                                                                             Start_Times, End_Times, Locations, Locations_mask, Descriptions, Descriptions_mask, Categories, Event_IDs, Colors))
@@ -810,7 +810,7 @@ class SIRA_BOT(commands.Cog):
                 ## Get Header and SOG Data (must be same SOG Format).
                 cal_data = pd.DataFrame(wks.get_worksheet(week_number + 2).get_all_values(value_render_option='UNFORMATTED_VALUE'))[2:][:]
                 headers = cal_data.iloc[0].values
-                IDCol = np.where(headers == 'Event ID')[0][0]
+                IDCol = np.where(headers == 'Event ID')[0][0] - 1
 
                 # Delete column K
                 request = {
