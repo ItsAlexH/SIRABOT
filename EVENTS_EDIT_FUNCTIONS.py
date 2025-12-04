@@ -1,31 +1,19 @@
 # Initial Imports
-from gcsa.google_calendar import GoogleCalendar
 from gcsa.event import Event
-from gcsa.recurrence import Recurrence, DAILY, SU, SA
 import re
-from oauth2client.service_account import ServiceAccountCredentials
-from gspread.utils import GridRangeType
-from gcsa.calendar import Calendar
 import uuid
-
+import os
+import pytz
+from dotenv import load_dotenv
 import time
 import numpy as np
 import pandas as pd
 import datetime as datetime
-from datetime import date, timedelta, time
 import gspread
-from beautiful_date import Jan, Feb, Mar, Apr, May, Jun, Jul, Aug, Sept, Oct, Nov, Dec
-from BotScript import update_or_create_discord_event, eastern
-import asyncio
+from DISCORD_BOT_FUNCTIONS import update_or_create_discord_event
 import datetime
-import os
-from dotenv import load_dotenv
-import sys
-import asyncio
 import json
 from gspread.exceptions import APIError
-
-# from FSI_Programming import Import_Prog, Reorganize_Sheet, Verbose_Sheet
 
 # Defining Coloring Scheme for GCal (Numbers given from gcsa documentation)
 H_color = 10
@@ -38,6 +26,8 @@ SpecialE_color = 8
 Missing_color = 1
 
 EVENT_DATA_FILE = 'events.json'
+load_dotenv()
+TIME_TZ = pytz.timezone(os.getenv("TIMEZONE"))
 
 def conversion_excel_date(f):
     temp = datetime.datetime(1899, 12, 30)
@@ -58,7 +48,7 @@ def parse_times(Dates, List_Times):
                     minute = 0
                     hour += 1
 
-                List_Times[j] = eastern.localize(
+                List_Times[j] = TIME_TZ.localize(
                     datetime.datetime(Dates[j].year, Dates[j].month, Dates[j].day, hour, minute))
             elif isinstance(time_value, str) and time_value.strip() not in ('', 'TBA'):
                 try:
@@ -70,7 +60,7 @@ def parse_times(Dates, List_Times):
                         print(f"Warning: Could not parse Start Time '{time_value}' for row {j}. Setting to None.")
                         List_Times[j] = None
                         continue
-                List_Times[j] = eastern.localize(
+                List_Times[j] = TIME_TZ.localize(
                     datetime.datetime(Dates[j].year, Dates[j].month, Dates[j].day, parsed_time.hour,
                                         parsed_time.minute))
             else:
@@ -167,8 +157,8 @@ async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
             )
             
             if(process == "Creation"):
-                current_time_eastern = eastern.localize(datetime.datetime.now())
-                if Start_Times[j] > current_time_eastern:
+                current_time_localized = TIME_TZ.localize(datetime.datetime.now())
+                if Start_Times[j] > current_time_localized:
                     print(f'Adding event to Google Calendar: {Titles[j]} (Start Time: {Start_Times[j]})')
                     created_event = calendar.add_event(gc_event)
                     calendar_id = created_event.event_id
@@ -234,20 +224,20 @@ async def update_events_by_id(bot, wks, program, calendar, event_ID, update_args
     if "date" in update_args:
         existing_start_time = _dt.datetime.fromisoformat(event0["start_time"]).time()
         existing_end_time   = _dt.datetime.fromisoformat(event0["end_time"]).time()
-        new_start_dt = eastern.localize(_dt.datetime.combine(update_args["date"], existing_start_time))
-        new_end_dt   = eastern.localize(_dt.datetime.combine(update_args["date"], existing_end_time))
+        new_start_dt = TIME_TZ.localize(_dt.datetime.combine(update_args["date"], existing_start_time))
+        new_end_dt   = TIME_TZ.localize(_dt.datetime.combine(update_args["date"], existing_end_time))
         event0["start_time"] = new_start_dt.isoformat()
         event0["end_time"]   = new_end_dt.isoformat()
         event0["date"]       = new_start_dt.isoformat()
 
     if "start_time" in update_args:
         existing_date = _dt.datetime.fromisoformat(event0["date"]).date()
-        new_start_dt = eastern.localize(_dt.datetime.combine(existing_date, update_args["start_time"]))
+        new_start_dt = TIME_TZ.localize(_dt.datetime.combine(existing_date, update_args["start_time"]))
         event0["start_time"] = new_start_dt.isoformat()
 
     if "end_time" in update_args:
         existing_date = _dt.datetime.fromisoformat(event0["date"]).date()
-        new_end_dt = eastern.localize(_dt.datetime.combine(existing_date, update_args["end_time"]))
+        new_end_dt = TIME_TZ.localize(_dt.datetime.combine(existing_date, update_args["end_time"]))
         event0["end_time"] = new_end_dt.isoformat()
 
     for key in ("leaders","location","category","description","recording","status"):
@@ -732,7 +722,6 @@ def Organize_Sheet(worksheet, spreadsheet_obj):
     from gspread.utils import rowcol_to_a1
     import pytz
 
-    eastern = pytz.timezone('US/Eastern')
 
     print(f"--- Processing sheet: '{worksheet.title}' ---")
 

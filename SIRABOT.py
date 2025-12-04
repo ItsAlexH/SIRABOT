@@ -18,8 +18,8 @@ import numpy as np
 import gspread
 from gcsa.google_calendar import GoogleCalendar
 
-from OrgParse import conversion_excel_date, parse_times, get_color, post_events, get_event_by_search_query, update_events_by_id, Reorganize_Sheet, Verbose_Sheet, update_events_submitted, get_event_submitted
-from FSI_Programming import Import_Sheet, Reorganize_Sheet_Import
+from EVENTS_EDIT_FUNCTIONS import conversion_excel_date, parse_times, get_color, post_events, get_event_by_search_query, update_events_by_id, Reorganize_Sheet, Verbose_Sheet, update_events_submitted, get_event_submitted
+from EVENTS_IMPORT_FUNCTIONS import Import_Sheet, Reorganize_Sheet_Import
 
 ################################################################################################
 ######################## Helper Functions ######################################################
@@ -28,12 +28,9 @@ from FSI_Programming import Import_Sheet, Reorganize_Sheet_Import
 async def Deploy_SOG(bot, program: str, week_number: int) -> str:
     print(f'Deploying events for Week #{week_number}...')
     
-    if program == "DEFAULT":
-        gc = gspread.service_account(filename='service_account.json')
-        wks = gc.open(os.getenv("DEFAULT_SOG_TOKEN"))
-        calendar = GoogleCalendar(os.getenv("DEFAULT_CALENDAR_ID"), credentials_path=r'credentials.json')
-
-    # You can append additional programs here if you want to run multiple simultaneously
+    gc = gspread.service_account(filename='service_account.json')
+    wks = gc.open(os.getenv(program.upper() + "_SOG_TOKEN"))
+    calendar = GoogleCalendar(os.getenv(program.upper() + "_CALENDAR_ID"), credentials_path=r'credentials.json')
 
     ## Get Header and SOG Data (must be same SOG Format).
     cal_data = pd.DataFrame(wks.get_worksheet(week_number + 2).get_all_values(value_render_option='UNFORMATTED_VALUE'))[2:][:]
@@ -79,10 +76,10 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
     ## Deploy external SOG ##
     #########################
     source_wks = wks.get_worksheet(week_number + 2)
-    new_sheet_info = source_wks.copy_to(os.getenv("DEFAULT_SOG_EXTERNAL_TOKEN"))
+    new_sheet_info = source_wks.copy_to(os.getenv(program.upper() + "_SOG_EXTERNAL_TOKEN"))
     
     # Open the destination spreadsheet
-    destination_spreadsheet = gc.open_by_key(os.getenv("DEFAULT_SOG_EXTERNAL_TOKEN"))
+    destination_spreadsheet = gc.open_by_key(os.getenv(program.upper() + "_SOG_EXTERNAL_TOKEN"))
     
     # Get the newly created worksheet
     new_wks = destination_spreadsheet.get_worksheet_by_id(new_sheet_info['sheetId'])
@@ -132,9 +129,8 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
 
 def Import_Programming(program: str, week_number: int) -> str:
     gc = gspread.service_account(filename='service_account.json')
-    if(program == "DEFAULT"):
-        wks_PROG = gc.open(os.getenv("DEFAULT_PROG_TOKEN"))
-        wks_SOG = gc.open(os.getenv("DEFAULT_SOG_TOKEN"))
+    wks_PROG = gc.open(os.getenv(program.upper() + "_PROG_TOKEN"))
+    wks_SOG = gc.open(os.getenv(program.upper() + "_SOG_TOKEN"))
 
     num_sheets = len(wks_PROG.worksheets())
     for n in (num_sheets-1):
@@ -145,8 +141,7 @@ def Import_Programming(program: str, week_number: int) -> str:
 
 def Submit_Event(program: str, payload: dict) -> str:
     gc = gspread.service_account(filename='service_account.json')
-    if(program == "DEFAULT"):
-        wks_prog = (gc.open(os.getenv("DEFAULT_SUBMITTED_EVENTS_TOKEN"))).get_worksheet(0)
+    wks_prog = (gc.open(os.getenv(program.upper() + "_SUBMITTED_EVENTS_TOKEN"))).get_worksheet(0)
 
     hosts_string = ", ".join(payload.get('hosts', []))
 
@@ -169,7 +164,7 @@ def Submit_Event(program: str, payload: dict) -> str:
 ################################################################################################
 
 load_dotenv()
-EASTERN_TZ = pytz.timezone('US/Eastern')
+TIME_TZ = pytz.timezone(os.getenv("TIMEZONE"))
 BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
 ######## LOAD LIST OF ADMINISTRATIVE USERS. STORED AS USER_NAME:DISCORD_USER_ID ########
@@ -283,7 +278,7 @@ class SIRA_BOT(commands.Cog):
         logger.info(f"Tag detected for {name} (ID: {user_id}).")
         guild_name = message.guild.name if message.guild else "Direct Message"
         channel_name = message.channel.name if isinstance(message.channel, discord.TextChannel) else "Direct Message"
-        current_time = datetime.datetime.now(EASTERN_TZ).strftime('%Y-%m-%d %I:%M %p')
+        current_time = datetime.datetime.now(TIME_TZ).strftime('%Y-%m-%d %I:%M %p')
         hyper_link = message.jump_url if message.guild else "N/A (Direct Message)"
 
         dm_content = (
@@ -411,25 +406,56 @@ class SIRA_BOT(commands.Cog):
                 return await ask(prompt, validate, parse, timeout)
             return content
 
-        ########## YOU CAN IMPLEMENT MULTIPLE PROGRAMS. e.g.,:
-        # programs = {"1": "PROGRAM1", "2": "PROGRAM2", "3": "PROGRAM3",
-        #             "program1": "PROGRAM1", "program2": "PROGRAM2", "program3": "PROGRAM3"}
-        # program = await ask(
-        #     "**Which Program?**\n(1) PROGRAM1\n(2) PROGRAM2\n(3) PROGRAM3\n\nType a number or name (or `cancel`).",
-        #     validate=lambda x: str(x).lower() in programs,
-        #     parse=lambda s: programs[s.lower()]
-        # )
-        # if program is None:
-        #     return
+        PROGRAMS = os.getenv("PROGRAMS").split(",")
+        if len(PROGRAMS) > 1:
+            # 1. Initialize the dictionary and the prompt string
+            programs = {}
+            prompt_lines = ["**Which Program?**"]
+            
+            # 2. Iterate through the PROGRAMS list to build the data structures
+            for i, prog_name in enumerate(PROGRAMS):
+                # The prompt number for the user (starts at 1)
+                prompt_number = str(i + 1)
+                
+                # Add entries to the programs dictionary:
+                # Key: "1", Value: "MyProgramA"
+                programs[prompt_number] = prog_name
+                # Key: "myprograma", Value: "MyProgramA" (case-insensitive name)
+                programs[prog_name.lower()] = prog_name
+                
+                # Add a line to the prompt string: (1) MyProgramA
+                prompt_lines.append(f"({prompt_number}) {prog_name}")
+                
+            # 3. Add the instructions/footer to the prompt
+            prompt_lines.append("\nType a number or name (or `cancel`).")
+            
+            # 4. Join the lines to form the final prompt string
+            final_prompt = "\n".join(prompt_lines)
+
+            # 5. Call the ask function with the dynamic prompt and validator
+            program = await ask(
+                final_prompt,
+                # The validator checks if the lowercased input is in the dynamically created keys
+                validate=lambda x: str(x).lower() in programs,
+                # The parser returns the canonical program name from the programs dictionary
+                parse=lambda s: programs[s.lower()]
+            )
+            
+            if program is None:
+                # Handle cancelation or invalid input
+                # return
+                print("Selection cancelled or invalid.") 
+            else:
+                print(f"Selected program: {program}") # Output: Selected program: ProjectB
+        else:
+            program = PROGRAMS[0]
         
-        program = "DEFAULT"
         if author.id in USER_IDS:
             tasks = {
                 "1": "Deploy SOG", "2": "Import Programming", "3": "Submit Event",
-                "4": "Edit Event", "5": "Cancel Event", "6": "Update Tokens",
+                "4": "Edit Event",
                 "deploy sog": "Deploy SOG", "import programming": "Import Programming",
-                "submit event": "Submit Event", "edit event": "Edit Event",
-                "cancel event": "Cancel Event", "update tokens": "Update Tokens"
+                "submit event": "Submit Event", "edit event": "Edit Event"
             }
             task_prompt = f"**What do you want to do for _{program}_?**\n(1) Deploy SOG\n(2) Import Programming\n(3) Submit Event\n(4) Edit Event\n(5) Cancel Event\n\nType a number or name (or `cancel`)."
         else:
@@ -453,13 +479,6 @@ class SIRA_BOT(commands.Cog):
                 raise ValueError("Week number must be a positive integer.")
             return n
 
-        def parse_prog_type(s: str) -> int:
-            s = s.strip().lower()
-            if s in ("p", "programming", "0"): return 0
-            if s in ("c", "cocurricular", "1"): return 1
-            if s in ("a", "all", "2"): return 2
-            raise ValueError("Enter 'Programming' or 'Cocurricular' (or P/C).")
-
         def parse_date_mmddyy(s: str) -> datetime.date:
             s = s.strip()
             for fmt in ("%m/%d/%y", "%m/%d/%Y"):
@@ -477,13 +496,6 @@ class SIRA_BOT(commands.Cog):
                 except ValueError: continue
             raise ValueError("Use times like '9:00 AM' or '1 PM'.")
             
-        def is_valid_uuid(uuid_to_test, version=4):
-            try:
-                uuid.UUID(uuid_to_test, version=version)
-            except ValueError:
-                return False
-            return True
-
         if task == "Deploy SOG":
             week = await ask(
                 f"**Deploy SOG** for _{program}_ — enter **Week Number** (positive integer):",
@@ -551,15 +563,7 @@ class SIRA_BOT(commands.Cog):
                 if search_query is None: return
 
                 gc = gspread.service_account(filename='service_account.json')
-                wks = gc.open(os.getenv("SUBMITTED_EVENTS_TOKEN"))
-                if program == "Residential" or program == "SIFP":
-                    wks_prog = wks.get_worksheet(0)
-                elif program == "Online":
-                    wks_prog = wks.get_worksheet(1)
-                else:
-                    await channel.send("Invalid program for submitted events. Aborting.")
-                    return
-
+                wks_prog = gc.open(os.getenv(program.upper() + "_SUBMITTED_EVENTS_TOKEN")).get_worksheet(0)
                 events_to_edit = get_event_submitted(wks_prog, search_query)
                 
                 if not events_to_edit:
@@ -774,29 +778,19 @@ class SIRA_BOT(commands.Cog):
                     return
 
                 await channel.send(f"🔄 Updating event **{event_to_edit.get('title', 'N/A')}**...")
-                
-                if(program == "Residential"):
-                    gc = gspread.service_account(filename='service_account.json')
-                    wks = gc.open(os.getenv("RES_SOG_TOKEN"))
-                    calendar = GoogleCalendar(os.getenv("RES_CALENDAR_ID"), credentials_path=r'credentials.json')
-                elif(program == "Online"):
-                    gc = gspread.service_account(filename='service_account.json')
-                    wks = gc.open(os.getenv("ONLINE_SOG_TOKEN"))
-                    calendar = GoogleCalendar(os.getenv("ONLINE_CALENDAR_ID"), credentials_path=r'credentials.json')
-                elif(program == "SIFP"):
-                    gc = gspread.service_account(filename='service_account.json')
-                    wks = gc.open(os.getenv("SIFP_SOG_TOKEN"))
-                    calendar = GoogleCalendar(os.getenv("SIFP_CALENDAR_ID"), credentials_path=r'credentials.json')
-                    
+            
+                gc = gspread.service_account(filename='service_account.json')
+                wks = gc.open(os.getenv(program.upper() + "_SOG_TOKEN"))
+                calendar = GoogleCalendar(os.getenv(program.upper() + "_CALENDAR_ID"), credentials_path=r'credentials.json')
                 await update_events_by_id(self.bot, wks, program, calendar, event_to_edit["id"], update_args)
                 
                 week_number = event_to_edit["week"]
                 ## Deploy external SOG
                 source_wks = wks.get_worksheet(week_number + 2)
-                new_sheet_info = source_wks.copy_to(os.getenv("SIFP_SOG_EXTERNAL_TOKEN"))
+                new_sheet_info = source_wks.copy_to(os.getenv(program.upper() + "_SOG_EXTERNAL_TOKEN"))
                 
                 # Open the destination spreadsheet
-                destination_spreadsheet = gc.open_by_key(os.getenv("SIFP_SOG_EXTERNAL_TOKEN"))
+                destination_spreadsheet = gc.open_by_key(os.getenv(program.upper() + "_SOG_EXTERNAL_TOKEN"))
                 
                 # Get the newly created worksheet
                 new_wks = destination_spreadsheet.get_worksheet_by_id(new_sheet_info['sheetId'])
@@ -812,6 +806,11 @@ class SIRA_BOT(commands.Cog):
                 # Update the title of the new worksheet to match the original
                 new_wks.update_title(source_wks.title)
 
+                ## Get Header and SOG Data (must be same SOG Format).
+                cal_data = pd.DataFrame(wks.get_worksheet(week_number + 2).get_all_values(value_render_option='UNFORMATTED_VALUE'))[2:][:]
+                headers = cal_data.iloc[0].values
+                IDCol = np.where(headers == 'Event ID')[0][0]
+
                 # Delete column K
                 request = {
                     "requests": [
@@ -820,8 +819,8 @@ class SIRA_BOT(commands.Cog):
                                 "range": {
                                     'sheetId': new_sheet_info['sheetId'],
                                     "dimension": "COLUMNS",
-                                    "startIndex": 10,
-                                    "endIndex": 11
+                                    "startIndex": IDCol,
+                                    "endIndex": IDCol+1
                                 }
                             }
                         }
@@ -845,10 +844,6 @@ class SIRA_BOT(commands.Cog):
                 await channel.send(f"✅ Event updated successfully!")
                 return
         
-        if task == "Cancel Event":
-            return
-        if task == "Update Tokens":
-            return
 async def main():
     await bot.add_cog(SIRA_BOT(bot))
     await bot.start(BOT_TOKEN)

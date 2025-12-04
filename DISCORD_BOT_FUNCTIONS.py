@@ -9,48 +9,30 @@ import asyncio
 ################################################################################################
 ######################## Discord Event Sequence ############################################
 ################################################################################################
-eastern = pytz.timezone('US/Eastern')
 # Load environment variables from .env file
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
-GUILD_ID = int(os.getenv("DISCORD_GUILD_ID"))
-
-# Redis configuration
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
-REDIS_DB = int(os.getenv("REDIS_DB", 0))
-
+TIME_TZ = pytz.timezone(os.getenv("TIMEZONE"))
 
 # --- Core Function to Update/Create Discord Event ---
 async def update_or_create_discord_event(bot, program:str, event_name: str, event_description: str, event_start_time: datetime.datetime,
     event_end_time: datetime.datetime,  event_location: str, discord_id = None, status = None):
-
-    # await bot_ready_event.wait()
-    # print("Bot confirmed ready before event operation.")
-
-    if(program == "Residential"):
-        guild = bot.get_guild(int(os.getenv("RES_DISCORD_GUILD_ID")))
+    GUILD_ID = int(program.upper() + os.getenv("_DISCORD_GUILD_ID"))
+    guild = bot.get_guild(GUILD_ID)
         
-    elif(program == "Online"):
-        guild = bot.get_guild(int(os.getenv("ONLINE_DISCORD_GUILD_ID")))
-        
-    elif(program == "SIFP"):
-        guild = bot.get_guild(int(os.getenv("SIFP_DISCORD_GUILD_ID")))
-        
-        
-    if not guild: # Add a check to handle the case where the guild is not found
+    if not guild:
         print(f"Error: Guild not found.")
         return False
 
     intents = discord.Intents.default()
     intents.guilds = True
-    intents.guild_scheduled_events = True # Crucial for scheduled events
+    intents.guild_scheduled_events = True
 
     external_event_type = discord.EntityType.external
     scheduled_events = await guild.fetch_scheduled_events()
     found_event = None ## update to updating with event_id
 
-    current_time = eastern.localize(datetime.datetime.now())
+    current_time = TIME_TZ.localize(datetime.datetime.now())
     
     if(discord_id != None):
         for event in scheduled_events:
