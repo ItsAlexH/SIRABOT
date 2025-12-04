@@ -192,14 +192,14 @@ async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
             if(process == "Creation"):
                 current_time_localized = TIME_TZ.localize(datetime.datetime.now())
                 if Start_Times[j] > current_time_localized:
-                    print(f'Adding event to Google Calendar: {Titles[j]} (Start Time: {Start_Times[j]})')
+                    print(f'Adding Event: {Titles[j]} (Start Time: {Start_Times[j]})')
                     created_event = calendar.add_event(gc_event)
                     calendar_id = created_event.event_id
                     discord_id = await update_or_create_discord_event(bot, program, Titles[j], f'**Description:** {description_val} \n \n**Led by:** {leader_val} \n \n**Category:** {category_val}', Start_Times[j], End_Times[j], location_val)
                     event["calendar_id"] = calendar_id
                     event["discord_id"] = discord_id
                 else:
-                    print(f'Google Calendar event not posted: {Titles[j]} (Start Time: {Start_Times[j]}) since event time has passed.')
+                    print(f'Event not posted: {Titles[j]} (Start Time: {Start_Times[j]}) since event time has passed.')
             elif(process == "Update"):
                 if(event["status"] == "Active"):
                     gc_event = calendar.get_event(event_id=event["calendar_id"])
@@ -213,7 +213,14 @@ async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
                     gc_event.event_id = event["calendar_id"]
                 else:
                     calendar.delete_event(event["calendar_id"])
-                discord_id = await update_or_create_discord_event(bot, program, Titles[j], description_val, Start_Times[j], End_Times[j], location_val, event["discord_id"], event["status"])
+
+                current_time_localized = TIME_TZ.localize(datetime.datetime.now())
+                if Start_Times[j] > current_time_localized:
+                    print(f'Edited Event: {Titles[j]} (Start Time: {Start_Times[j]})')
+                    discord_id = await update_or_create_discord_event(bot, program, Titles[j], description_val, Start_Times[j], End_Times[j], location_val, event["discord_id"], event["status"])
+                else:
+                    print(f'Event not updated: {Titles[j]} (Start Time: {Start_Times[j]}) since event time has passed.')
+                    
         else:
             print(f"Skipping row {j} due to missing data: Date={Dates[j]}, Start_Time={Start_Times[j]}, End_Time={End_Times[j]}, Title={Titles[j]}")
     with open(EVENT_DATA_FILE, 'w') as f:
