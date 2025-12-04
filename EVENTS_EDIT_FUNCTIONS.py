@@ -148,7 +148,7 @@ async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
                 continue
             
             process = None
-            print(Event_IDs)
+            # print(Event_IDs)
             if (Event_IDs[j] == '' or Event_IDs[j] is None):
                 process = "Creation"
                 event_id = str(uuid.uuid4())
