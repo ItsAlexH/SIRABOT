@@ -79,8 +79,7 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
     new_sheet_info = source_wks.copy_to(os.getenv(program.upper() + "_SOG_EXTERNAL_KEY"))
     
     # Open the destination spreadsheet
-    # destination_spreadsheet = gc.open_by_key(os.getenv(program.upper() + "_SOG_EXTERNAL_KEY"))
-    destination_spreadsheet = gc.open(os.getenv(program.upper() + "_SOG_EXTERNAL_KEY"))
+    destination_spreadsheet = gc.open_by_key(os.getenv(program.upper() + "_SOG_EXTERNAL_KEY"))
     
     # Get the newly created worksheet
     new_wks = destination_spreadsheet.get_worksheet_by_id(new_sheet_info['sheetId'])
