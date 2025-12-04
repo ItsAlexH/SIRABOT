@@ -300,6 +300,25 @@ async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
                 # 1. Search through google calendar events. Is there one with a matching id? if so, make gc_event that. If not, create a new event and assign a new id.
                 try:
                     gc_event = calendar.get_event(event_id=event["calendar_id"])
+                    if(event["status"] == "Active"):
+                        gc_event = calendar.get_event(event_id=event["calendar_id"])
+                        gc_event.summary = Titles[j]
+                        gc_event.start = Start_Times[j]
+                        gc_event.end = End_Times[j]
+                        gc_event.location = location_val
+                        gc_event.description = f'<b>Description: </b>{description_val} \n \n<b>Led by: </b>{leader_val} \n \n<b>Category: </b>{category_val}'
+                        gc_event.color_id = Colors[j] if j < len(Colors) else Missing_color
+                        gc_event.minutes_before_popup_reminder = 30
+                        gc_event.event_id = event["calendar_id"]
+                    else:
+                        calendar.delete_event(event["calendar_id"])
+
+                    current_time_localized = TIME_TZ.localize(datetime.datetime.now())
+                    if Start_Times[j] > current_time_localized:
+                        print(f'Edited Event: {Titles[j]} (Start Time: {Start_Times[j]})')
+                        discord_id = await update_or_create_discord_event(bot, program, Titles[j], description_val, Start_Times[j], End_Times[j], location_val, event["discord_id"], event["status"])
+                    else:
+                        print(f'Event not updated: {Titles[j]} (Start Time: {Start_Times[j]}) since event time has passed.')
                 except:
                     print('No Matching Google Calendar Events. Assigning New Event')
                     gc_event = Event(
@@ -314,29 +333,24 @@ async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
                         created_event = calendar.add_event(gc_event)
                         calendar_id = created_event.event_id
                         event["calendar_id"] = calendar_id
+
+                        if(event["status"] == "Active"):
+                            gc_event = calendar.get_event(event_id=event["calendar_id"])
+                            gc_event.summary = Titles[j]
+                            gc_event.start = Start_Times[j]
+                            gc_event.end = End_Times[j]
+                            gc_event.location = location_val
+                            gc_event.description = f'<b>Description: </b>{description_val} \n \n<b>Led by: </b>{leader_val} \n \n<b>Category: </b>{category_val}'
+                            gc_event.color_id = Colors[j] if j < len(Colors) else Missing_color
+                            gc_event.minutes_before_popup_reminder = 30
+                            gc_event.event_id = event["calendar_id"]
+                        else:
+                            calendar.delete_event(event["calendar_id"])
+
+                        print(f'Edited Event: {Titles[j]} (Start Time: {Start_Times[j]})')
+                        discord_id = await update_or_create_discord_event(bot, program, Titles[j], description_val, Start_Times[j], End_Times[j], location_val, event["discord_id"], event["status"])
                     else:
                         print(f'Event not paired: {Titles[j]} (Start Time: {Start_Times[j]}) since event time has passed.')
-
-                if(event["status"] == "Active"):
-                    gc_event = calendar.get_event(event_id=event["calendar_id"])
-                    gc_event.summary = Titles[j]
-                    gc_event.start = Start_Times[j]
-                    gc_event.end = End_Times[j]
-                    gc_event.location = location_val
-                    gc_event.description = f'<b>Description: </b>{description_val} \n \n<b>Led by: </b>{leader_val} \n \n<b>Category: </b>{category_val}'
-                    gc_event.color_id = Colors[j] if j < len(Colors) else Missing_color
-                    gc_event.minutes_before_popup_reminder = 30
-                    gc_event.event_id = event["calendar_id"]
-                else:
-                    calendar.delete_event(event["calendar_id"])
-
-                current_time_localized = TIME_TZ.localize(datetime.datetime.now())
-                if Start_Times[j] > current_time_localized:
-                    print(f'Edited Event: {Titles[j]} (Start Time: {Start_Times[j]})')
-                    discord_id = await update_or_create_discord_event(bot, program, Titles[j], description_val, Start_Times[j], End_Times[j], location_val, event["discord_id"], event["status"])
-                else:
-                    print(f'Event not updated: {Titles[j]} (Start Time: {Start_Times[j]}) since event time has passed.')
-                    
         else:
             print(f"Skipping row {j} due to missing data: Date={Dates[j]}, Start_Time={Start_Times[j]}, End_Time={End_Times[j]}, Title={Titles[j]}")
     with open(EVENT_DATA_FILE, 'w') as f:
