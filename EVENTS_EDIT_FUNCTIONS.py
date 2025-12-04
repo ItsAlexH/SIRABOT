@@ -34,39 +34,72 @@ def conversion_excel_date(f):
     return temp + datetime.timedelta(f)
 
 def parse_times(Dates, List_Times):
-
+    # Iterate through the lists simultaneously
     for j in range(0, len(List_Times)):
+        
+        # 1. Check if the date part is valid
         if isinstance(Dates[j], datetime.datetime):
             time_value = List_Times[j]
+            
+            # 2. Handle Numeric (Excel-style) Time Values
             if isinstance(time_value, (int, float)):
                 excel_time_float = time_value
                 total_hours_float = excel_time_float * 24
+                
+                # Calculate hour and minute
                 hour = int(np.floor(total_hours_float))
                 minute = int(60 * (total_hours_float - hour))
 
                 if minute > 59: # Handles issues with floating times
                     minute = 0
                     hour += 1
+                
+                # --- MODIFICATION: 12:00 AM Check (Numeric) ---
+                # If the resulting time is 00:00 (or very close), set it to 23:59.
+                # We use a small delta (minute <= 1) to catch floating point edge cases.
+                if hour == 0 and minute <= 1: 
+                    hour = 23
+                    minute = 59
+                # ---------------------------------------------
 
                 List_Times[j] = TIME_TZ.localize(
                     datetime.datetime(Dates[j].year, Dates[j].month, Dates[j].day, hour, minute))
+            
+            # 3. Handle String Time Values
             elif isinstance(time_value, str) and time_value.strip() not in ('', 'TBA'):
+                parsed_time = None
+                
+                # Try common formats: '%I:%M %p' (e.g., '10:30 AM')
                 try:
                     parsed_time = datetime.datetime.strptime(time_value.strip(), '%I:%M %p').time()
                 except ValueError:
+                    # Try military format: '%H:%M' (e.g., '22:30')
                     try:
                         parsed_time = datetime.datetime.strptime(time_value.strip(), '%H:%M').time()
                     except ValueError:
                         print(f"Warning: Could not parse Start Time '{time_value}' for row {j}. Setting to None.")
                         List_Times[j] = None
                         continue
+                        
+                # --- MODIFICATION: 12:00 AM Check (String) ---
+                # Check if the parsed time is exactly 00:00:00.
+                if parsed_time.hour == 0 and parsed_time.minute == 0:
+                    # Change to 23:59:00 (11:59 PM)
+                    parsed_time = datetime.time(23, 59)
+                # ---------------------------------------------
+                        
                 List_Times[j] = TIME_TZ.localize(
-                    datetime.datetime(Dates[j].year, Dates[j].month, Dates[j].day, parsed_time.hour,
-                                        parsed_time.minute))
+                    datetime.datetime(Dates[j].year, Dates[j].month, Dates[j].day, 
+                                     parsed_time.hour, parsed_time.minute))
+                                     
+            # 4. Handle Empty/Unparseable Time Values
             else:
                 List_Times[j] = None
+                
+        # 5. Handle Invalid Date Values
         else:
             List_Times[j] = None
+            
     return List_Times
 
 def get_color(Categories):
@@ -109,7 +142,7 @@ async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
             description_val = Descriptions[j] if j < len(Descriptions) and not Descriptions_mask[j] else "It's a surprise!"
             leader_val = Leaders[j] if j < len(Leaders) and not Leaders_mask[j] else 'EBCAO Staff'
             category_val = Categories[j] if j < len(Categories) else 'Unknown'
-
+                
             if End_Times[j] <= Start_Times[j]:
                 print(f"Skipping event '{Titles[j]}' (row {j}) as end time is not after start time: Start={Start_Times[j]}, End={End_Times[j]}")
                 continue
