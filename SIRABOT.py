@@ -104,7 +104,7 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
                         'sheetId': new_sheet_info['sheetId'],
                         "dimension": "COLUMNS",
                         "startIndex": IDCol,
-                        "endIndex": IDCol+1
+                        "endIndex": IDColp1
                     }
                 }
             }
@@ -810,7 +810,7 @@ class SIRA_BOT(commands.Cog):
                 cal_data = pd.DataFrame(wks.get_worksheet(week_number + 2).get_all_values(value_render_option='UNFORMATTED_VALUE'))[2:][:]
                 headers = cal_data.iloc[0].values
                 IDCol = np.where(headers == 'Event ID')[0][0] - 1
-
+                IDColp1 = IDCol+1
                 # Delete column K
                 request = {
                     "requests": [
@@ -820,7 +820,7 @@ class SIRA_BOT(commands.Cog):
                                     'sheetId': new_sheet_info['sheetId'],
                                     "dimension": "COLUMNS",
                                     "startIndex": IDCol,
-                                    "endIndex": IDCol+1
+                                    "endIndex": IDColp1
                                 }
                             }
                         }
