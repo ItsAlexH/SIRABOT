@@ -197,18 +197,30 @@ if map_str:
 NOTIFICATION_ROLE_IDS = set(ROLE_CHANNEL_MAP.keys())
 
 ####### LOAD CATEGORIES & COLORS
+######## LOAD LIST OF ADMINISTRATIVE CATEGORIES. STORED AS category:DISCORD_description ########
 CAT_DESCRIP = {}
+CATEGORIES = [] 
 map_str = os.getenv("CATEGORIES")
 if map_str:
     try:
         pairs = map_str.split(',')
         for pair in pairs:
-            category, descriptions = pair.split(':')
-            CAT_DESCRIP[category.strip()] = descriptions.strip()
-    except ValueError:
-        logging.error("Invalid format for CAT_DESCRIP in .env file. Please use 'category:description, category:description'")
+            if ':' not in pair:
+                logging.warning(f"Skipping malformed pair: {pair}")
+                continue
+                
+            category, descriptions = pair.split(':', 1)
+            
+            category_key = category.strip()
+            
+            CAT_DESCRIP[category_key] = descriptions.strip()
+            # 🔑 This is the critical line: we append the key to the list in order.
+            CATEGORIES.append(category_key)
+            
+    except ValueError as e:
+        logging.error(f"Invalid format for CAT_DESCRIP: {e}")
 
-CATEGORIES = set(CAT_DESCRIP.keys())
+# CATEGORIES = set(CAT_DESCRIP.keys())
 DESCRIPTIONS = set(CAT_DESCRIP.values())
 COLORS = os.getenv("CATEGORIES_COLORS").split(',')
 
