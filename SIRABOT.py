@@ -214,7 +214,6 @@ if map_str:
             category_key = category.strip()
             
             CAT_DESCRIP[category_key] = descriptions.strip()
-            # 🔑 This is the critical line: we append the key to the list in order.
             CATEGORIES.append(category_key)
             
     except ValueError as e:
