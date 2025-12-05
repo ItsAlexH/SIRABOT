@@ -10,10 +10,12 @@ import numpy as np
 import pandas as pd
 import datetime as datetime
 import gspread
-from DISCORD_BOT_FUNCTIONS import update_or_create_discord_event
+# from DISCORD_BOT_FUNCTIONS import update_or_create_discord_event
 import datetime
 import json
 from gspread.exceptions import APIError
+import discord
+from discord.utils import utcnow
 
 # Defining Coloring Scheme for GCal (Numbers given from gcsa documentation)
 H_color = 10
@@ -101,27 +103,6 @@ def parse_times(Dates, List_Times):
             List_Times[j] = None
             
     return List_Times
-
-def get_color(Categories):
-    Colors = []
-    for j in range(0, len(Categories)):
-        if (Categories[j] == 'H'):
-            Colors.append(H_color)
-        elif (Categories[j] == 'A'):
-            Colors.append(A_color)
-        elif (Categories[j] == 'L'):
-            Colors.append(L_color)
-        elif (Categories[j] == 'P'):
-            Colors.append(P_color)
-        elif (Categories[j] == 'S'):
-            Colors.append(S_color)
-        elif (Categories[j] == 'MANDATORY'):
-            Colors.append(MANDATORY_color)
-        elif (Categories[j] == 'Special Event!'):
-            Colors.append(SpecialE_color)
-        else:
-            Colors.append(Missing_color)
-    return Colors
 
 async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
     Titles, Leaders, Leaders_mask, Dates, Start_Times, End_Times, Locations, Locations_mask, Descriptions, Descriptions_mask, Categories, Event_IDs, Colors = p
@@ -591,7 +572,7 @@ def update_events_submitted(wks_prog, event_to_edit: dict, update_args: dict) ->
                 "end_time": "End Time",
                 "hosts": "Host & CoHosts",
                 "description": "Event Description",
-                "halps": "Suggested HALPS Category",
+                "category": "Suggested Category",
                 "location": "Location",
             }.get(key)
             
@@ -656,9 +637,9 @@ def get_programming(cal_data, ii):
     Host_arr = cal_data["Host"][ii[0]:ii[1] + 1].reset_index(drop=True)
     Name_arr = cal_data["Name"][ii[0]:ii[1] + 1].reset_index(drop=True)
     Description_arr = cal_data["Description"][ii[0]:ii[1] + 1].reset_index(drop=True)
-    HALPS_arr = cal_data["HALPS Category"][ii[0]:ii[1] + 1].reset_index(drop=True)
+    Cat_arr = cal_data["Category"][ii[0]:ii[1] + 1].reset_index(drop=True)
     Location_arr = cal_data["Location"][ii[0]:ii[1] + 1].reset_index(drop=True)
-    return Date_arr, Start_arr, End_arr, Host_arr, Name_arr, Description_arr, HALPS_arr, Location_arr
+    return Date_arr, Start_arr, End_arr, Host_arr, Name_arr, Description_arr, Cat_arr, Location_arr
 
 def clean_headers(raw_headers_list, prefix="Unnamed"):
     cleaned = []
@@ -694,7 +675,7 @@ def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):
 
     print(f'Printing events for Week #{week_number} from Programming sheet #{PROGRAMMING}...')
 
-    Date_arr, Start_arr, End_arr, Host_arr, Name_arr, Description_arr, HALPS_arr, Location_arr = get_programming(cal_data, ii_w[week_number-1])
+    Date_arr, Start_arr, End_arr, Host_arr, Name_arr, Description_arr, Cat_arr, Location_arr = get_programming(cal_data, ii_w[week_number-1])
 
     worksheet_SOG_index = 2 + week_number
     worksheet_SOG = wks_SOG.get_worksheet(worksheet_SOG_index)
@@ -748,7 +729,7 @@ def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):
         
         new_row_data = [
             current_input_name, Host_arr[j], Start_arr[j], End_arr[j], 
-            Description_arr[j], Location_arr[j], 1, HALPS_arr[j]
+            Description_arr[j], Location_arr[j], 1, Cat_arr[j]
         ]
     
         if match_found_at_sog_df_index != -1:
@@ -1356,3 +1337,73 @@ def unmerge_columns_in_data(worksheet, header_names=("Date", "Notes")) -> None:
         })
     if reqs:
         worksheet.spreadsheet.batch_update({"requests": reqs})
+
+
+async def update_or_create_discord_event(bot, program:str, event_name: str, event_description: str, event_start_time: datetime.datetime,
+    event_end_time: datetime.datetime,  event_location: str, discord_id = None, status = None):
+    GUILD_ID = int(os.getenv(program.upper() + "_DISCORD_GUILD_ID"))
+    guild = bot.get_guild(GUILD_ID)
+        
+    if not guild:
+        print(f"Error: Guild not found.")
+        return False
+
+    intents = discord.Intents.default()
+    intents.guilds = True
+    intents.guild_scheduled_events = True
+
+    external_event_type = discord.EntityType.external
+    scheduled_events = await guild.fetch_scheduled_events()
+    found_event = None ## update to updating with event_id
+
+    current_time = TIME_TZ.localize(datetime.datetime.now())
+    
+    if(discord_id != None):
+        for event in scheduled_events:
+            if event.id == discord_id:
+                found_event = event
+                break
+    try:
+        if found_event:
+            print(f'Editing Existing Event: {event_name} (ID: {found_event.id})!')
+            # Compare already localized times
+            if event_start_time > current_time:
+                if(status != "Canceled"):
+                    found_event = await found_event.edit(
+                            name=event_name,
+                            description=event_description,
+                            location=event_location,
+                            start_time=event_start_time,
+                            end_time=event_end_time,
+                            privacy_level=discord.PrivacyLevel.guild_only)
+                    print(f'Successfully updated event: {event_name}')
+                    return found_event.id
+                else:
+                    found_event = await found_event.delete()
+                    print(f'Successfully deleted event: {event_name}')
+                    return found_event.id
+            print(f'Event in the past!')
+            return None
+        else:
+            print(f'Creating New Event: {event_name}!')
+            # Compare already localized times
+            if event_start_time > current_time:
+                created_event = await guild.create_scheduled_event(
+                    name=event_name,
+                    description=event_description,
+                    start_time=event_start_time,
+                    entity_type=external_event_type,
+                    privacy_level=discord.PrivacyLevel.guild_only,
+                    location=event_location,
+                    end_time=event_end_time,
+                    reason="New event created via external Redis call")
+                print(f'Successfully created event: {event_name}')
+                return created_event.id
+            print(f'Event in the past!')
+            return None
+    except discord.HTTPException as e:
+        print(f"Discord API Error during event operation: {e}")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred during event operation: {e}")
+        return None

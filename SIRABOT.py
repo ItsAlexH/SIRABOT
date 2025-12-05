@@ -62,7 +62,7 @@ async def Deploy_SOG(bot, program: str, week_number: int) -> str:
     Start_Times = parse_times(Dates, cal_data['Start Time'].tolist())
     End_Times = parse_times(Dates, cal_data['End Time'].tolist())
     Event_IDs = cal_data['Event ID'].tolist()
-    Colors = get_color(Categories)
+    Colors = get_color(Categories)           ############## TODO
     
     Descriptions_mask = [val == '' for val in Descriptions]
     Locations_mask = [val == '' for val in Locations]
@@ -152,7 +152,7 @@ def Submit_Event(program: str, payload: dict) -> str:
         payload.get('title'), 
         hosts_string,
         payload.get('description'), 
-        payload.get('halps'),
+        payload.get('category'),
         payload.get('location'),
         payload.get('recurrence')
     ]
@@ -195,6 +195,38 @@ if map_str:
     except ValueError:
         logging.error("Invalid format for ROLE_CHANNEL_MAP in .env file. Please use 'role_id:channel_id,role_id:channel_id'")
 NOTIFICATION_ROLE_IDS = set(ROLE_CHANNEL_MAP.keys())
+
+####### LOAD CATEGORIES & COLORS
+CAT_DESCRIP = {}
+map_str = os.getenv("CATEGORIES")
+if map_str:
+    try:
+        pairs = map_str.split(',')
+        for pair in pairs:
+            category, descriptions = pair.split(':')
+            CAT_DESCRIP[category.strip()] = descriptions.strip()
+    except ValueError:
+        logging.error("Invalid format for CAT_DESCRIP in .env file. Please use 'category:description, category:description'")
+
+CATEGORIES = set(CAT_DESCRIP.keys())
+DESCRIPTIONS = set(CAT_DESCRIP.values())
+COLORS = os.getenv("CATEGORIES_COLORS").split(',')
+
+category_list = sorted(list(CATEGORIES))
+
+# Format the list of categories (e.g., `H`, `A`, `L`, or `P`)
+if len(category_list) == 0:
+    formatted_list = "No categories defined"
+elif len(category_list) == 1:
+    formatted_list = f"`{category_list[0]}`"
+else:
+    # Elements to join with ', ' (all except the last one)
+    elements_to_join = [f"`{c}`" for c in category_list[:-1]]
+    # The last element
+    last_element = f"`{category_list[-1]}`"
+    
+    # Combine: `H`, `A`, `L`, `P`, or `S`
+    formatted_list = ", ".join(elements_to_join) + f", or {last_element}"
 
 ######## SET UP LOGGING AND INTENTS FOR DISCORD BOT ########
 log_handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='a')
@@ -530,10 +562,10 @@ class SIRA_BOT(commands.Cog):
             if description is None: return
             hosts = await ask("Enter **Host & CoHosts** (comma-separated):")
             if hosts is None: return
-            halps = await ask("Enter **Suggested HALPS Category** (`H`, `A`, `L`, `P`, or `S`):",
-                            validate=lambda s: s.strip().upper() in {"H", "A", "L", "P", "S"},
+            category = await ask(f"Enter **Suggested Category** ({formatted_list}):",
+                            validate=lambda s: s.strip().upper() in CATEGORIES,
                             parse=lambda s: s.strip().upper())
-            if halps is None: return
+            if category is None: return
             location = await ask("Enter **Location**:")
             if location is None: return
             recurrence = await ask("Is this event recurring? (No, Weekly, Biweekly)")
@@ -542,7 +574,7 @@ class SIRA_BOT(commands.Cog):
                 "date": date.strftime('%m/%d/%Y'), "start_time": start_t.strftime("%I:%M %p"),
                 "end_time": end_t.strftime("%I:%M %p"), "title": title,
                 "description": description, "hosts": [h.strip() for h in hosts.split(",") if h.strip()],
-                "halps": halps, "location": location, "recurrence": recurrence
+                "category": category, "location": location, "recurrence": recurrence
             }
 
             await channel.send(f"📝 Submitting event **{title}** for **{program}**...")
@@ -602,7 +634,7 @@ class SIRA_BOT(commands.Cog):
                 fields_to_edit_raw = await ask(
                     "Which fields would you like to edit? Type `all` or a comma-separated list of numbers/names:\n"
                     "(1) title\n(2) date\n(3) start time\n(4) end time\n"
-                    "(5) hosts\n(6) description\n(7) halps\n(8) location"
+                    "(5) hosts\n(6) description\n(7) category\n(8) location"
                 )
                 if fields_to_edit_raw is None: return
 
@@ -610,7 +642,7 @@ class SIRA_BOT(commands.Cog):
                     "1": "title", "title": "title", "2": "date", "date": "date",
                     "3": "start_time", "start time": "start_time", "4": "end_time", "end time": "end_time",
                     "5": "hosts", "hosts": "hosts", "6": "description", "description": "description",
-                    "7": "halps", "halps": "halps", "8": "location", "location": "location",
+                    "7": "category", "category": "category", "8": "location", "location": "location",
                     "all": "all"
                 }
 

@@ -23,7 +23,7 @@ def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):
 
     print(f'Printing events for Week #{week_number} from Programming sheet #{PROGRAMMING}...')
 
-    Date_arr, Start_arr, End_arr, Host_arr, Name_arr, Description_arr, HALPS_arr, Location_arr = get_programming(cal_data, ii_w[week_number-1])
+    Date_arr, Start_arr, End_arr, Host_arr, Name_arr, Description_arr, Cat_arr, Location_arr = get_programming(cal_data, ii_w[week_number-1])
 
     print(Name_arr)
     for i,Date in enumerate(Date_arr):
@@ -46,7 +46,7 @@ def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):
     
     ### REVIEW THIS SECTION FOR THOSE WITHOUT RECORDING
 
-    ### Columns N (12) & M (13) are for the HALPS category. Pad and overwrite at the end.
+    ### Columns N (12) & M (13) are for the Category. Pad and overwrite at the end.
     while len(headers_SOG_raw) <= 13: ######### 
         headers_SOG_raw.append('') 
 
@@ -106,7 +106,7 @@ def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):
         # Prepare the data payload for the row to be written to Google Sheet
         new_row_data = [
             current_input_name, Host_arr[j], Start_arr[j], End_arr[j], 
-            Description_arr[j], Location_arr[j], 1, HALPS_arr[j]
+            Description_arr[j], Location_arr[j], 1, Cat_arr[j]
         ]
     
         if match_found_at_sog_df_index != -1:
@@ -864,9 +864,9 @@ def get_programming(cal_data, ii):
     Host_arr = cal_data["Host"][ii[0]:ii[1] + 1].reset_index(drop=True)
     Name_arr = cal_data["Name"][ii[0]:ii[1] + 1].reset_index(drop=True)
     Description_arr = cal_data["Description"][ii[0]:ii[1] + 1].reset_index(drop=True)
-    HALPS_arr = cal_data["HALPS Category"][ii[0]:ii[1] + 1].reset_index(drop=True)
+    Cat_arr = cal_data["Category"][ii[0]:ii[1] + 1].reset_index(drop=True)
     Location_arr = cal_data["Location"][ii[0]:ii[1] + 1].reset_index(drop=True)
-    return Date_arr, Start_arr, End_arr, Host_arr, Name_arr, Description_arr, HALPS_arr, Location_arr
+    return Date_arr, Start_arr, End_arr, Host_arr, Name_arr, Description_arr, Cat_arr, Location_arr
 
 def clean_headers(raw_headers_list, prefix="Unnamed"):
     """
