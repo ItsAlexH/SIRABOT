@@ -104,6 +104,27 @@ def parse_times(Dates, List_Times):
             
     return List_Times
 
+def get_color(Categories):
+    Colors = []
+    for j in range(0, len(Categories)):
+        if (Categories[j] == 'H'):
+            Colors.append(H_color)
+        elif (Categories[j] == 'A'):
+            Colors.append(A_color)
+        elif (Categories[j] == 'L'):
+            Colors.append(L_color)
+        elif (Categories[j] == 'P'):
+            Colors.append(P_color)
+        elif (Categories[j] == 'S'):
+            Colors.append(S_color)
+        elif (Categories[j] == 'MANDATORY'):
+            Colors.append(MANDATORY_color)
+        elif (Categories[j] == 'Special Event!'):
+            Colors.append(SpecialE_color)
+        else:
+            Colors.append(Missing_color)
+    return Colors
+
 async def post_events(bot, wks, week_number, IDCol, program, calendar, p):
     Titles, Leaders, Leaders_mask, Dates, Start_Times, End_Times, Locations, Locations_mask, Descriptions, Descriptions_mask, Categories, Event_IDs, Colors = p
     events = []
