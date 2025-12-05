@@ -197,7 +197,6 @@ if map_str:
 NOTIFICATION_ROLE_IDS = set(ROLE_CHANNEL_MAP.keys())
 
 ####### LOAD CATEGORIES & COLORS
-######## LOAD LIST OF ADMINISTRATIVE CATEGORIES. STORED AS category:DISCORD_description ########
 CAT_DESCRIP = {}
 CATEGORIES = [] 
 map_str = os.getenv("CATEGORIES")
@@ -219,22 +218,20 @@ if map_str:
     except ValueError as e:
         logging.error(f"Invalid format for CAT_DESCRIP: {e}")
 
-# CATEGORIES = set(CAT_DESCRIP.keys())
+CATEGORIES_KEYS = set(CAT_DESCRIP.keys())
 DESCRIPTIONS = set(CAT_DESCRIP.values())
 COLORS = os.getenv("CATEGORIES_COLORS").split(',')
 
-category_list = sorted(list(CATEGORIES))
-
 # Format the list of categories (e.g., `H`, `A`, `L`, or `P`)
-if len(category_list) == 0:
+if len(CATEGORIES) == 0:
     formatted_list = "No categories defined"
-elif len(category_list) == 1:
-    formatted_list = f"`{category_list[0]}`"
+elif len(CATEGORIES) == 1:
+    formatted_list = f"`{CATEGORIES[0]}`"
 else:
     # Elements to join with ', ' (all except the last one)
-    elements_to_join = [f"`{c}`" for c in category_list[:-1]]
+    elements_to_join = [f"`{c}`" for c in CATEGORIES[:-1]]
     # The last element
-    last_element = f"`{category_list[-1]}`"
+    last_element = f"`{CATEGORIES[-1]}`"
     
     # Combine: `H`, `A`, `L`, `P`, or `S`
     formatted_list = ", ".join(elements_to_join) + f", or {last_element}"
