@@ -37,7 +37,7 @@ def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):
     worksheet_SOG = wks_SOG.get_worksheet(worksheet_SOG_index)
     
     # Define the row where headers are in SOG (0-indexed)
-    sog_header_row_gspread_idx = 2 # Row 3 in Google Sheet
+    sog_header_row_gspread_idx = 2 # Row 3 in Google Sheet # TODO, REMOVE HARDCODING.
     sog_data_start_row_gspread_idx = sog_header_row_gspread_idx + 1 # Row 4 in Google Sheet
 
     # --- Store columns M and N before any modifications ---
@@ -398,7 +398,7 @@ def Organize_Sheet(worksheet, spreadsheet_obj):
     end_time_col_name = 'End Time'
     description_col_name = 'Description'
     location_col_name = 'Location/Link'
-    halps_col_name = 'HALPS Points'
+    halps_col_name = 'Points'
     category_col_name = 'Category'
     recording_col_name = 'Recording'
     
@@ -599,7 +599,7 @@ def Organize_Sheet(worksheet, spreadsheet_obj):
     end_time_col_name = 'End Time'
     description_col_name = 'Description'
     location_col_name = 'Location/Link'
-    halps_col_name = 'HALPS Points'
+    halps_col_name = 'Points'
     category_col_name = 'Category'
     recording_col_name = 'Recording'
 

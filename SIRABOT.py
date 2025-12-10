@@ -17,6 +17,14 @@ import numpy as np
 # Google and Sheets-related imports
 import gspread
 from gcsa.google_calendar import GoogleCalendar
+from gspread_formatting import (
+    set_conditional_format_rules, 
+    ConditionalFormatRule, 
+    BooleanRule, 
+    BooleanCondition, 
+    CellFormat, 
+    color
+)
 
 from EVENTS_EDIT_FUNCTIONS import conversion_excel_date, parse_times, get_color, post_events, get_event_by_search_query, update_events_by_id, Reorganize_Sheet, Verbose_Sheet, update_events_submitted, get_event_submitted
 from EVENTS_IMPORT_FUNCTIONS import Import_Sheet, Reorganize_Sheet_Import
@@ -131,12 +139,65 @@ def Import_Programming(program: str, week_number: int) -> str:
     gc = gspread.service_account(filename='service_account.json')
     wks_PROG = gc.open(os.getenv(program.upper() + "_PROG_TOKEN"))
     wks_SOG = gc.open(os.getenv(program.upper() + "_SOG_TOKEN"))
+    
+    # 0. Find Initial Column, Row & pass to Import_Sheet (for initial offset).
+    # Row_Offset(program, wks_SOG, week_number)
+
+    # 1. Copy Sheet 1 (TEMPLATE) and move it to final slot. 
+    #    Before copying, ensure that num_sheets = week_number + 1. # TODO, make this +0 in the future by removing second template sheet.
+    #    If num_sheets = week_number + 2, then check that it is named correctly (if not, delete and copy) -> add Day 1 of programming to .env s.t. we can say Week week_number (Month Day0-Day1) as title. 
+    # Create_New_Sheet(program, wks_SOG, week_number) 
 
     num_sheets = len(wks_PROG.worksheets())
     for n in (num_sheets-1):
         Import_Sheet(program, wks_PROG, wks_SOG, week_number, n)
 
     Reorganize_Sheet_Import(program, wks_SOG, week_number)
+    # 2. Apply Conditional Formatting Rules to all event cells (background coloring)
+    #    Find Initial Column, Row, Final column, row s.t. we have range for applying conditional formatting.
+
+    # Your rules use 'CUSTOM_FORMULA' as the BooleanCondition type
+    # condition = BooleanCondition('CUSTOM_FORMULA', ['=EXACT($J4,"H")'])
+
+    # # 2. Define the Format
+    # # The format that will be applied when the condition is TRUE
+    # cell_format = CellFormat(
+    #     backgroundColor=color(0.85, 0.95, 0.85) # Light Green
+    # )
+
+    # # 3. Combine into the Rule
+    # rule = ConditionalFormatRule(
+    #     # The range where the format is applied (C4:K24 in your image)
+    #     ranges=['C4:K24'], 
+    #     booleanRule=BooleanRule(
+    #         condition=condition,
+    #         format=cell_format
+    #     )
+    # )
+    # rules = get_conditional_format_rules(worksheet)
+    # rules.save()
+    # To represent C4:K24 using indices:
+    # # Row 4, Col C -> (3, 2)
+    # # Row 24, Col K -> (23, 10)
+
+    # grid_range = GridRange(
+    #     start_row_index=3, 
+    #     end_row_index=24, 
+    #     start_column_index=2, 
+    #     end_column_index=11, # K is the 11th column (0-indexed)
+    #     sheet_id=worksheet.id 
+    # )
+
+    # # You can then use the GridRange object in your rule's ranges list
+    # rule = ConditionalFormatRule(
+    #     ranges=[grid_range],
+    #     # ... rest of the rule
+    # )
+    # Apply_CondFormat_Rules(program, wks_SOG, week_number)
+
+    # 3. Delete contents of "Key" and "Key Description" Column. Remove formatting Rules. Then reapply formatting rules & Categories / Keys that are from the .env.
+    # Reapply_Key(program, wks_SOG, week_number)
+
     return f"Imported Programming for {program} (Week {week_number})."
 
 def Submit_Event(program: str, payload: dict) -> str:
@@ -222,7 +283,7 @@ CATEGORIES_KEYS = set(CAT_DESCRIP.keys())
 DESCRIPTIONS = set(CAT_DESCRIP.values())
 COLORS = os.getenv("CATEGORIES_COLORS").split(',')
 
-# Format the list of categories (e.g., `H`, `A`, `L`, or `P`)
+# Format the list of categories (e.g., `H`, `A`,...)
 if len(CATEGORIES) == 0:
     formatted_list = "No categories defined"
 elif len(CATEGORIES) == 1:
@@ -233,7 +294,7 @@ else:
     # The last element
     last_element = f"`{CATEGORIES[-1]}`"
     
-    # Combine: `H`, `A`, `L`, `P`, or `S`
+    # Combine: e.g., `H`, `A`, `L`, `P`, or `S`
     formatted_list = ", ".join(elements_to_join) + f", or {last_element}"
 
 ######## SET UP LOGGING AND INTENTS FOR DISCORD BOT ########
