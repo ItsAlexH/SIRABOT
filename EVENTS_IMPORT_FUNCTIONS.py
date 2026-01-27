@@ -143,6 +143,8 @@ def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):
 
             try:
                 worksheet_SOG.insert_row(insert_row_data_full, index=insert_row_sheet)
+                ## Insert and sleep so that we don't hit the rate limit .DONE
+                time.sleep(5) 
                 print(f"  -> Successfully inserted new event '{current_input_name}'.")
             except APIError as e:
                 print(f"  -> Error inserting row at {insert_row_sheet} for event '{current_input_name}': {e.response.text}")
