@@ -18,7 +18,7 @@ import numpy as np
 import gspread
 from gcsa.google_calendar import GoogleCalendar
 from gspread_formatting import (
-    set_conditional_format_rules, 
+    get_conditional_format_rules, 
     ConditionalFormatRule, 
     BooleanRule, 
     BooleanCondition, 
