@@ -35,6 +35,11 @@ def conversion_excel_date(f):
     temp = datetime.datetime(1899, 12, 30)
     return temp + datetime.timedelta(f)
 
+def to_excel_date(date_obj):
+    epoch = datetime(1899, 12, 30)
+    delta = date_obj - epoch
+    return delta.days + (delta.seconds / 86400.0)
+
 def parse_times(Dates, List_Times):
     # Iterate through the lists simultaneously
     for j in range(0, len(List_Times)):

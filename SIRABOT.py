@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 import pytz
 import pandas as pd
 import numpy as np
+from datetime import datetime as dt
+from datetime import timedelta
 
 # Google and Sheets-related imports
 import gspread
@@ -26,8 +28,8 @@ from gspread_formatting import (
     color
 )
 
-from EVENTS_EDIT_FUNCTIONS import conversion_excel_date, parse_times, get_color, post_events, get_event_by_search_query, update_events_by_id, Reorganize_Sheet, Verbose_Sheet, update_events_submitted, get_event_submitted
-from EVENTS_IMPORT_FUNCTIONS import Import_Sheet, Reorganize_Sheet_Import
+from EVENTS_EDIT_FUNCTIONS import conversion_excel_date, parse_times, get_color, post_events, get_event_by_search_query, update_events_by_id, Reorganize_Sheet, Verbose_Sheet, update_events_submitted, get_event_submitted, to_excel_date
+from EVENTS_IMPORT_FUNCTIONS import Import_Sheet, Reorganize_Sheet_Import, Row_Offset, format_time_columns_as_time
 
 ################################################################################################
 ######################## Helper Functions ######################################################
@@ -139,20 +141,88 @@ def Import_Programming(program: str, week_number: int) -> str:
     gc = gspread.service_account(filename='service_account.json')
     wks_PROG = gc.open(os.getenv(program.upper() + "_PROG_TOKEN"))
     wks_SOG = gc.open(os.getenv(program.upper() + "_SOG_TOKEN"))
-    
-    # 0. Find Initial Column, Row & pass to Import_Sheet (for initial offset).
-    # Row_Offset(program, wks_SOG, week_number)
 
-    # 1. Copy Sheet 1 (TEMPLATE) and move it to final slot. 
-    #    Before copying, ensure that num_sheets = week_number + 1. # TODO, make this +0 in the future by removing second template sheet.
-    #    If num_sheets = week_number + 2, then check that it is named correctly (if not, delete and copy) -> add Day 1 of programming to .env s.t. we can say Week week_number (Month Day0-Day1) as title. 
-    # Create_New_Sheet(program, wks_SOG, week_number) 
+    num_sheets = len(wks_SOG.worksheets())
+    n_template_sheets = 2
 
+    # 0. Copy Sheet 1 (TEMPLATE) and move it to final slot.
+    existing_sheet = True
+    if (num_sheets < (week_number + n_template_sheets + 1)): 
+        template_sheet = wks_SOG.worksheet("Template")
+        existing_sheet = False
+        start_date = dt.fromisoformat(os.getenv(program + "_START_DATE"))
+
+        # a. Normalize to the very first Monday of the program
+        if start_date.weekday() == 0:
+            monday_date_0 = start_date
+        else:
+            days_to_subtract = start_date.weekday()
+            monday_date_0 = start_date - timedelta(days=days_to_subtract)
+
+        # b. Calculate this specific week's Monday and Sunday
+        # (Moved outside the if/else so these always exist)
+        monday_date = monday_date_0 + timedelta(days = 7 * (week_number - 1))
+        sunday_date = monday_date + timedelta(days = 6)
+
+        # c. Create the title string logic
+        m_month = monday_date.strftime("%B")
+        m_day = monday_date.strftime("%d").lstrip("0")
+        s_month = sunday_date.strftime("%B")
+        s_day = sunday_date.strftime("%d").lstrip("0")
+
+        if monday_date.month == sunday_date.month:
+            date_range = f"{m_month} {m_day}-{s_day}"
+        else:
+            date_range = f"{m_month} {m_day}-{s_month} {s_day}"
+
+        title_string = f"Week {week_number} ({date_range})"
+
+    # d. Duplicate the sheet
+        new_sheet = wks_SOG.duplicate_sheet(
+            source_sheet_id=template_sheet.id,
+            insert_sheet_index=(week_number + n_template_sheets),
+            new_sheet_name=title_string
+        )
+
+        # e. Get Row Offsets
+        Date_Column, Notes_Column, Title_Column, Leader_Column, Start_Time_Column, End_Time_Column, Description_Column, Location_Column, Points_Column, Category_Column, Event_ID_Column, Key_Column, Event_Start_Row, Event_End_Row, Fixed_Box_Start_Row, Fixed_Box_End_Row = Row_Offset(wks_SOG, week_number, n_template_sheets)
+
+        # f. Prepare Date Values as Excel Serial Numbers
+        date_values = []
+        for i in range(7):
+            day = monday_date + timedelta(days=i)
+            date_values.append([to_excel_date(day)])
+
+        # g. Construct Range (Handling 1-based indexing for gspread)
+        # We use Date_Column + 1 because gspread/Google API is 1-based (A=1, B=2)
+        col_letter = gspread.utils.rowcol_to_a1(1, Date_Column + 1).replace("1", "")
+        cell_range = f"{col_letter}{Event_Start_Row+1}:{col_letter}{Event_End_Row+1}"
+
+        # h. Update values and Apply proper Date Formatting
+        # value_input_option='USER_ENTERED' allows Google to recognize the serial number
+        new_sheet.update(cell_range, date_values, value_input_option='USER_ENTERED')
+        
+        # This applies the visual mask: "Monday, December 1"
+        new_sheet.format(cell_range, {
+            "numberFormat": {
+                "type": "DATE",
+                "pattern": "dddd, MMMM d"
+            },
+            "horizontalAlignment": "CENTER"
+        })
+
+        print(f"Successfully created: {title_string}")
+
+    # 1. Find Initial Column, Row & pass to Import_Sheet (for initial offset).
+    Date_Column, Notes_Column, Title_Column, Leader_Column, Start_Time_Column, End_Time_Column, Description_Column, Location_Column, Points_Column, Category_Column, Event_ID_Column, Key_Column, Event_Start_Row, Event_End_Row, Fixed_Box_Start_Row, Fixed_Box_End_Row = Row_Offset(wks_SOG, week_number, n_template_sheets)
+
+    # 1b.
     num_sheets = len(wks_PROG.worksheets())
-    for n in (num_sheets-1):
-        Import_Sheet(program, wks_PROG, wks_SOG, week_number, n)
+    for n in range(num_sheets-1):
+        Import_Sheet(program, wks_PROG, wks_SOG, week_number, n, n_template_sheets)
 
-    Reorganize_Sheet_Import(program, wks_SOG, week_number)
+    Reorganize_Sheet_Import(program, wks_SOG, week_number, n_template_sheets)
+
     # 2. Apply Conditional Formatting Rules to all event cells (background coloring)
     #    Find Initial Column, Row, Final column, row s.t. we have range for applying conditional formatting.
 
@@ -197,6 +267,11 @@ def Import_Programming(program: str, week_number: int) -> str:
 
     # 3. Delete contents of "Key" and "Key Description" Column. Remove formatting Rules. Then reapply formatting rules & Categories / Keys that are from the .env.
     # Reapply_Key(program, wks_SOG, week_number)
+
+    # FORMATTING RULES
+    target_wks = wks_SOG.get_worksheet(week_number + n_template_sheets)
+    format_time_columns_as_time(target_wks, 4, target_wks.row_count)
+    
 
     return f"Imported Programming for {program} (Week {week_number})."
 

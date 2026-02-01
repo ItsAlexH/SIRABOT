@@ -1,4 +1,4 @@
-import time
+import time as time2
 import numpy as np
 import pandas as pd
 import datetime as datetime
@@ -7,12 +7,16 @@ from datetime import time
 import gspread
 import gspread.utils
 from gspread.exceptions import APIError
+from gspread_formatting import *
 import re
+
+from EVENTS_EDIT_FUNCTIONS import conversion_excel_date
+
 
 # Number of Empty Headers Rows
 row_print_offset = 4 
 
-def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):        
+def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING, n_template_sheets):        
     cal_data = pd.DataFrame(wks.get_worksheet(PROGRAMMING).get_all_values(value_render_option='UNFORMATTED_VALUE'))[0:][:]
     headers = cal_data.iloc[0].values
     cal_data.columns = headers
@@ -25,15 +29,16 @@ def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):
 
     Date_arr, Start_arr, End_arr, Host_arr, Name_arr, Description_arr, Cat_arr, Location_arr = get_programming(cal_data, ii_w[week_number-1])
 
-    print(Name_arr)
+    # print(Name_arr)
     for i,Date in enumerate(Date_arr):
         if(Date != None and Date != ''):
             LD = Date
         else:
             Date_arr[i] = LD
-    print(Date_arr)
+    # print(Date_arr)
+    # TODO: IF SHEET DOESN'T EXIST, COPY TEMPLATE. (AND ASSIGN PROPER DATE RANGE.)
     ##### OUTPUT SPREADSHEET (SOG)
-    worksheet_SOG_index = 2 + week_number
+    worksheet_SOG_index = n_template_sheets + week_number
     worksheet_SOG = wks_SOG.get_worksheet(worksheet_SOG_index)
     
     # Define the row where headers are in SOG (0-indexed)
@@ -144,7 +149,7 @@ def Import_Sheet(program, wks, wks_SOG, week_number, PROGRAMMING):
             try:
                 worksheet_SOG.insert_row(insert_row_data_full, index=insert_row_sheet)
                 ## Insert and sleep so that we don't hit the rate limit .DONE
-                time.sleep(5) 
+                time2.sleep(1) 
                 print(f"  -> Successfully inserted new event '{current_input_name}'.")
             except APIError as e:
                 print(f"  -> Error inserting row at {insert_row_sheet} for event '{current_input_name}': {e.response.text}")
@@ -385,6 +390,16 @@ def Organize_Sheet(worksheet, spreadsheet_obj):
     
     df = pd.DataFrame(padded_data, columns=initial_df_cols)
     df = df.replace('', np.nan).infer_objects(copy=False) 
+
+    # Ensure consistent data types
+    df = df.astype({
+        'Workshop Title': str,
+        'Led By': str,
+        'Description': str,
+        'Location/Link': str,
+        'Category': str
+    })
+
 
     print("\n--- DEBUG: DataFrame 'df' after initial creation (ALL columns) ---")
     print(df.head(10)) 
@@ -782,13 +797,13 @@ def Verbose_Sheet(program, wks_SOG, week_number):
             
     print('\nAll sheets processed.')
     
-def Reorganize_Sheet_Import(program, wks_SOG, week_number):
+def Reorganize_Sheet_Import(program, wks_SOG, week_number, n_template_sheets):
     """
     Main function to connect to Google Sheets and loop through all relevant
     worksheets, organizing each one.
     """
     specific_week = True
-    sog_tab = 2 + week_number
+    sog_tab = n_template_sheets + week_number
 
     all_worksheets = wks_SOG.worksheets()
     sheets_to_process = []
@@ -819,6 +834,151 @@ def Reorganize_Sheet_Import(program, wks_SOG, week_number):
             
     print('\nAll sheets processed.')
 
+def Row_Offset(wks_SOG, week_number, n_template_sheets):
+    # Fetch data
+    raw_data = wks_SOG.get_worksheet(week_number + n_template_sheets).get_all_values(value_render_option='UNFORMATTED_VALUE')
+    cal_data = pd.DataFrame(raw_data)
+    
+    if cal_data.empty:
+        return [None] * 16 # Handle empty sheets gracefully
+
+    # --- 1. Find Header Row ---
+    header_index = 0
+    header_found = False
+    for i in range(min(100, len(cal_data))):
+        if "Date" in cal_data.iloc[i].values:
+            header_index = i
+            header_found = True
+            break
+    
+    if not header_found:
+        # Fallback if "Date" isn't found at all
+        return [None] * 16
+
+    # Assign headers and get column locations
+    headers = cal_data.iloc[header_index].values
+    cal_data.columns = headers
+    
+    # Helper to safely get column index
+    def get_col(name):
+        return cal_data.columns.get_loc(name) if name in cal_data.columns else None
+
+    Date_Column = get_col("Date")
+    Notes_Column = get_col("Notes")
+    Title_Column = get_col("Workshop Title")
+    Leader_Column = get_col("Led By")
+    Start_Time_Column = get_col("Start Time")
+    End_Time_Column = get_col("End Time")
+    Description_Column = get_col("Description")
+    Location_Column = get_col("Location/Link")
+    Points_Column = get_col("Points")
+    Category_Column = get_col("Category")
+    Event_ID_Column = get_col("Event ID")
+    Key_Column = get_col("Key")
+
+    # --- 2. Find Section Breaks ---
+    Event_Start_Row = header_index + 1
+    fixed_box_found = False
+    split_index = 0
+    
+    # Search for the non-empty string in the Date column that marks the Fixed Box
+    # We start searching from after the header
+    for i in range(Event_Start_Row + 1, min(Event_Start_Row + 100, len(cal_data))):
+        val = cal_data.iloc[i, Date_Column]
+        
+        # Logic: If it's a string, not empty, and not a number (date value)
+        if isinstance(val, str) and val.strip() != "" and not val.replace('.','',1).isdigit():
+            # Check if the row above is empty (your original spacer logic)
+            row_above = cal_data.iloc[i - 1].values
+            if all(str(item).strip() == "" for item in row_above):
+                split_index = i
+                fixed_box_found = True
+                break
+
+    # --- 3. Define Row Boundaries ---
+    if fixed_box_found:
+        # If the string was found, split the sections
+        Event_End_Row = split_index - 2 # Row before the empty spacer
+        Fixed_Box_Start_Row = split_index
+        Fixed_Box_End_Row = len(cal_data) - 1
+    else:
+        # If no non-empty string found, events go to the end of data
+        # Find the last row that actually has content
+        last_row_with_data = len(cal_data) - 1
+        for i in range(len(cal_data) - 1, Event_Start_Row, -1):
+            if any(str(x).strip() != "" for x in cal_data.iloc[i].values):
+                last_row_with_data = i
+                break
+        
+        Event_End_Row = last_row_with_data
+        Fixed_Box_Start_Row = np.nan
+        Fixed_Box_End_Row = np.nan
+    
+    return (Date_Column, Notes_Column, Title_Column, Leader_Column, 
+            Start_Time_Column, End_Time_Column, Description_Column, 
+            Location_Column, Points_Column, Category_Column, 
+            Event_ID_Column, Key_Column, Event_Start_Row, 
+            Event_End_Row, Fixed_Box_Start_Row, Fixed_Box_End_Row)
+
+# def Row_Offset(wks_SOG, week_number, n_template_sheets):
+#     cal_data = pd.DataFrame(wks_SOG.get_worksheet(week_number+n_template_sheets).get_all_values(value_render_option='UNFORMATTED_VALUE'))[0:][:]
+#     header_not_found = True
+#     header_index = 0
+#     while header_not_found:
+#         headers = cal_data.iloc[header_index].values
+#         if("Date" in headers):
+#             header_not_found = False
+#             break
+#         else:
+#             header_index+=1
+#             if(header_index > 100):
+#                 break
+
+#     headers = cal_data.iloc[header_index].values
+#     cal_data.columns = headers
+#     Date_Column = cal_data.columns.get_loc("Date")
+#     Notes_Column = cal_data.columns.get_loc("Notes")
+#     Title_Column = cal_data.columns.get_loc("Workshop Title")
+#     Leader_Column = cal_data.columns.get_loc("Led By")
+#     Start_Time_Column = cal_data.columns.get_loc("Start Time")
+#     End_Time_Column = cal_data.columns.get_loc("End Time")
+#     Description_Column = cal_data.columns.get_loc("Description")
+#     Location_Column = cal_data.columns.get_loc("Location/Link")
+#     Points_Column = cal_data.columns.get_loc("Points")
+#     Category_Column = cal_data.columns.get_loc("Category")
+#     Event_ID_Column = cal_data.columns.get_loc("Event ID")
+#     Key_Column = cal_data.columns.get_loc("Key")
+
+#     Date_arr = cal_data[headers[Date_Column]][header_index+1:][:]
+#     end_not_found = True
+#     end_index = 1
+#     while end_not_found:
+#         if (not isinstance(Date_arr[end_index+header_index], int) and Date_arr[end_index+header_index]!=""):
+#             row_check = cal_data.iloc[end_index+header_index-1].values
+#             if all(item == "" for item in row_check):
+#                 end_index = end_index-1
+#                 end_not_found = False
+#                 break
+#             else:
+#                 end_index = end_index
+#                 end_not_found = False
+#                 break
+#         else:
+#             end_index+=1
+#             if(end_index > 100):
+#                 break
+
+#     # print(cal_data.iloc[end_index+header_index-1].values)
+#     # print(cal_data.iloc[end_index+header_index+1].values)
+#     # print(cal_data[headers[Date_Column]][header_index+1:][:])
+
+#     Event_Start_Row = header_index+1
+#     Event_End_Row = end_index+header_index-1
+#     Fixed_Box_Start_Row = end_index+header_index+1
+#     Fixed_Box_End_Row = len(cal_data[headers[Date_Column]])-1
+    
+#     return Date_Column, Notes_Column, Title_Column, Leader_Column, Start_Time_Column, End_Time_Column, Description_Column, Location_Column, Points_Column, Category_Column, Event_ID_Column, Key_Column, Event_Start_Row, Event_End_Row, Fixed_Box_Start_Row, Fixed_Box_End_Row
+    
 def prog_weeks(Weeks_arr):
     ii_w = []
     i0 = 0
@@ -895,3 +1055,35 @@ def clean_headers(raw_headers_list, prefix="Unnamed"):
 
         cleaned.append(header_str)
     return cleaned
+
+# TODO: MAKE IT PASS START COLUMN, END COLUMN
+def format_time_columns_as_time(worksheet, start_row, end_row):
+    """
+    Applies a standard 'h:mm AM/PM' number format to columns F and G 
+    (Start Time and End Time) in the SOG.
+    """
+    # Column indices for Start Time (F=6) and End Time (G=7)
+    # Using the Google Sheets API 'numberFormat' request
+    requests = [
+        {
+            "repeatCell": {
+                "range": {
+                    "sheetId": worksheet.id,
+                    "startRowIndex": start_row - 1, # 0-indexed
+                    "endRowIndex": end_row,
+                    "startColumnIndex": 4, # Column E
+                    "endColumnIndex": 6  # Column F (exclusive, so E and F)
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "numberFormat": {
+                            "type": "TIME",
+                            "pattern": "h:mm am/pm"
+                        }
+                    }
+                },
+                "fields": "userEnteredFormat.numberFormat"
+            }
+        }
+    ]
+    worksheet.spreadsheet.batch_update({"requests": requests})
